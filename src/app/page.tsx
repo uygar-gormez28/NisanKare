@@ -135,10 +135,14 @@ export default function Home() {
         );
       } catch (err: unknown) {
         console.error(`Error uploading ${currentItem.name}:`, err);
-        const errorText =
+        let errorText =
           err instanceof Error
             ? err.message
             : 'Yükleme sırasında beklenmeyen bir hata oluştu.';
+
+        if (errorText.includes('Failed to fetch')) {
+          errorText = 'Mobil internet bağlantınızda anlık bir kesinti oluştu. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.';
+        }
 
         setSelectedFiles((prev) =>
           prev.map((f, idx) =>

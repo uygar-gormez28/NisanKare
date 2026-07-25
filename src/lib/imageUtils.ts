@@ -71,15 +71,15 @@ export async function convertHeicIfNeeded(selectedFile: SelectedFile): Promise<S
 }
 
 /**
- * Chunked Upload helper (3MB per chunk, exact multiple of 256KB required by Google Drive API)
- * Avoids browser CORS issues while staying well under Vercel's 4.5MB request body limit.
+ * Chunked Upload helper with automatic retry for mobile networks.
+ * Uses 1MB chunks (exact multiple of 256KB) for maximum stability on cellular 3G/4G/5G connections.
  */
 export async function uploadFileDirectToDrive(
   file: File,
   uploadUrl: string,
   onProgress: (percent: number) => void
 ): Promise<void> {
-  const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB per chunk (3,145,728 bytes = 12 * 256 KB)
+  const CHUNK_SIZE = 1024 * 1024; // 1 MB per chunk (1,048,576 bytes = 4 * 256 KB)
   const totalSize = file.size;
   let start = 0;
 
@@ -90,24 +90,50 @@ export async function uploadFileDirectToDrive(
     const chunk = file.slice(start, end);
     const contentRange = `bytes ${start}-${end - 1}/${totalSize}`;
 
-    const res = await fetch('/api/upload-chunk', {
-      method: 'POST',
-      headers: {
-        'x-upload-url': uploadUrl,
-        'content-range': contentRange,
-        'content-type': file.type || 'image/jpeg',
-      },
-      body: chunk,
-    });
+    let success = false;
+    let attempts = 0;
+    let lastError = '';
 
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || `Yükleme hatası (${res.status}): ${res.statusText}`);
+    // Automatic retry up to 3 times per chunk in case of mobile network stutters
+    while (!success && attempts < 3) {
+      attempts++;
+      try {
+        const res = await fetch('/api/upload-chunk', {
+          method: 'POST',
+          headers: {
+            'x-upload-url': uploadUrl,
+            'content-range': contentRange,
+            'content-type': file.type || 'image/jpeg',
+          },
+          body: chunk,
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || `Yükleme hatası (HTTP ${res.status})`);
+        }
+
+        const data = await res.json();
+        if (!data.success) {
+          throw new Error(data.error || 'Parça yükleme başarısız oldu.');
+        }
+
+        success = true;
+      } catch (err: unknown) {
+        lastError = err instanceof Error ? err.message : 'Ağ hatası';
+        if (lastError.includes('Failed to fetch')) {
+          lastError = 'Mobil internet bağlantısı anlık olarak kesildi. Yeniden deneniyor...';
+        }
+        
+        if (attempts < 3) {
+          // Wait 1 second before retrying chunk
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
     }
 
-    const data = await res.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Parça yükleme başarısız oldu.');
+    if (!success) {
+      throw new Error(`Bağlantı hatası: ${lastError}`);
     }
 
     start = end;
