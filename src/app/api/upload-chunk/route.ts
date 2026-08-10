@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
-// Disable body parser limits for Next.js route if needed, 3MB chunks are small enough
 export const maxDuration = 60; // 60 seconds max execution per chunk
 
 export async function POST(request: Request) {
@@ -19,18 +18,28 @@ export async function POST(request: Request) {
 
     // Read chunk arrayBuffer from incoming request
     const chunkBuffer = await request.arrayBuffer();
+    const chunkLength = chunkBuffer.byteLength;
+
+    if (chunkLength === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Yüklenen parça boş (0 bytes).' },
+        { status: 400 }
+      );
+    }
 
     // Forward chunk to Google Drive Resumable Upload Session URL
+    // CRITICAL: Content-Length must be explicitly provided so Node.js fetch doesn't use Transfer-Encoding: chunked
     const googleResponse = await fetch(uploadUrl, {
       method: 'PUT',
       headers: {
         'Content-Type': contentType,
         'Content-Range': contentRange,
+        'Content-Length': chunkLength.toString(),
       },
       body: chunkBuffer,
     });
 
-    // Google Drive returns 308 for incomplete uploads, 200/201 for complete
+    // Google Drive returns 308 for incomplete uploads, 200/201 for completed file
     if (googleResponse.status === 308 || googleResponse.status === 200 || googleResponse.status === 201) {
       return NextResponse.json({
         success: true,
@@ -40,12 +49,12 @@ export async function POST(request: Request) {
     }
 
     const errorText = await googleResponse.text();
-    console.error(`Google Drive chunk upload error (${googleResponse.status}):`, errorText);
+    console.error(`Google Drive chunk upload error (HTTP ${googleResponse.status}):`, errorText);
 
     return NextResponse.json(
       {
         success: false,
-        error: `Google Drive yükleme hatası (${googleResponse.status}): ${googleResponse.statusText}`,
+        error: `Google Drive API hatası (HTTP ${googleResponse.status}): ${errorText || googleResponse.statusText}`,
       },
       { status: googleResponse.status }
     );

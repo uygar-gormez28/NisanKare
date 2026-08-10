@@ -15,13 +15,15 @@ export function formatFileSize(bytes: number): string {
  * Checks if a file is HEIC/HEIF format (common on iPhones)
  */
 export function isHeicFile(file: File): boolean {
-  const fileName = file.name.toLowerCase();
-  const fileType = file.type.toLowerCase();
+  const fileName = (file.name || '').toLowerCase();
+  const fileType = (file.type || '').toLowerCase();
   return (
     fileName.endsWith('.heic') ||
     fileName.endsWith('.heif') ||
     fileType === 'image/heic' ||
-    fileType === 'image/heif'
+    fileType === 'image/heif' ||
+    fileType.includes('heic') ||
+    fileType.includes('heif')
   );
 }
 
@@ -49,7 +51,7 @@ export async function convertHeicIfNeeded(selectedFile: SelectedFile): Promise<S
       lastModified: Date.now(),
     });
 
-    if (selectedFile.previewUrl.startsWith('blob:')) {
+    if (selectedFile.previewUrl && selectedFile.previewUrl.startsWith('blob:')) {
       URL.revokeObjectURL(selectedFile.previewUrl);
     }
 
@@ -72,7 +74,7 @@ export async function convertHeicIfNeeded(selectedFile: SelectedFile): Promise<S
 
 /**
  * Chunked Upload helper with automatic retry for mobile networks.
- * Uses 1MB chunks (exact multiple of 256KB) for maximum stability on cellular 3G/4G/5G connections.
+ * Uses 1MB chunks (exact multiple of 256KB) for maximum stability on cellular connections.
  */
 export async function uploadFileDirectToDrive(
   file: File,
@@ -89,6 +91,7 @@ export async function uploadFileDirectToDrive(
     const end = Math.min(start + CHUNK_SIZE, totalSize);
     const chunk = file.slice(start, end);
     const contentRange = `bytes ${start}-${end - 1}/${totalSize}`;
+    const contentType = file.type || 'image/jpeg';
 
     let success = false;
     let attempts = 0;
@@ -103,28 +106,20 @@ export async function uploadFileDirectToDrive(
           headers: {
             'x-upload-url': uploadUrl,
             'content-range': contentRange,
-            'content-type': file.type || 'image/jpeg',
+            'content-type': contentType,
           },
           body: chunk,
         });
 
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({}));
-          throw new Error(errorData.error || `Yükleme hatası (HTTP ${res.status})`);
-        }
+        const data = await res.json().catch(() => ({}));
 
-        const data = await res.json();
-        if (!data.success) {
-          throw new Error(data.error || 'Parça yükleme başarısız oldu.');
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || `HTTP ${res.status}: ${res.statusText}`);
         }
 
         success = true;
       } catch (err: unknown) {
         lastError = err instanceof Error ? err.message : 'Ağ hatası';
-        if (lastError.includes('Failed to fetch')) {
-          lastError = 'Mobil internet bağlantısı anlık olarak kesildi. Yeniden deneniyor...';
-        }
-        
         if (attempts < 3) {
           // Wait 1 second before retrying chunk
           await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -133,7 +128,10 @@ export async function uploadFileDirectToDrive(
     }
 
     if (!success) {
-      throw new Error(`Bağlantı hatası: ${lastError}`);
+      if (lastError.includes('Failed to fetch')) {
+        throw new Error('Mobil internet bağlantısında anlık bir kesinti oluştu. Lütfen tekrar deneyin.');
+      }
+      throw new Error(lastError);
     }
 
     start = end;
