@@ -17,7 +17,7 @@ export const Header: React.FC = () => {
       {/* 2. 20 Ağustos Badge - Centered right under title */}
       <div className="flex items-center justify-center gap-1.5 px-3 py-1 rounded-full bg-[#F9EFEF] text-[#2B2430] text-xs font-medium tracking-wide">
         <span>20 Ağustos Nişan Anıları</span>
-        <Heart className="w-3.5 h-3.5 text-[#B76E79] fill-[#B76E79]" />
+        <Heart className="w-3.5 h-3.5 text-[#B76E79] fill-[#B76E79] animate-heartbeat origin-center" />
       </div>
 
       {/* 3. Couple Photo Showcase - Centered */}
