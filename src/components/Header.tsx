@@ -24,7 +24,7 @@ export const Header: React.FC = () => {
       <div className="flex items-center justify-center w-full my-2">
         <div className="relative w-40 h-52 sm:w-48 sm:h-60 rounded-2xl overflow-hidden border-4 border-white shadow-xl ring-1 ring-[#EEDDD8]">
           <img
-            src="/couple.png"
+            src="/WhatsApp Image 2026-08-19 at 02.02.49.jpeg"
             alt="Nişan Anısı"
             className="w-full h-full object-cover"
           />
